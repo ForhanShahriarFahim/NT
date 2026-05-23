@@ -4,6 +4,8 @@ Neuron-level explainable AI visualization pipeline for studying individual neuro
 
 This project extracts top-activating images for a target neuron, computes XAI saliency maps, crops the most relevant image regions, and generates collage grids for visual concept analysis.
 
+For the full command matrix covering all XAI methods, block 11 layer variants, and neuron/channel changes, see [RUNNING_INSTRUCTIONS.md](RUNNING_INSTRUCTIONS.md).
+
 The current focus is ViT-B/16 on ImageNet validation images, especially neuron-level visualization for layers such as:
 
 ```text
