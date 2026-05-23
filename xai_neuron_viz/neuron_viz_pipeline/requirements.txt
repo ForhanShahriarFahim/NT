@@ -1,0 +1,22 @@
+# Core deep learning
+torch
+torchvision
+timm
+
+# XAI / attribution
+captum>=0.7.0
+
+# Array, data, and scientific utilities
+numpy
+scipy
+pandas
+
+# Storage / config / progress
+safetensors
+PyYAML
+tqdm
+
+# Image processing and visualization
+Pillow
+opencv-contrib-python
+matplotlib

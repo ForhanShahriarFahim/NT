@@ -1,0 +1,59 @@
+# =============================================================================
+# FILE: neuron_viz_pipeline/configs/vit_ixg.yaml
+#
+# Purpose:
+#   ViT-B/16 + IxG, Phase 1 config.
+#
+# Run:
+#   cd NeuronTree-AI/Task-12/xai_neuron_viz
+#   python neuron_viz_pipeline/scripts/run_stage.py \
+#       --config neuron_viz_pipeline/configs/vit_ixg.yaml \
+#       --stage all
+#
+# IMPORTANT — about the layer choice:
+#   This config targets the leaf attention projection module in ViT block 11:
+#   model.blocks[11].attn.proj. Forward hooks fire on this leaf Linear module,
+#   so Stage 1 captures activations directly from the attention output
+#   projection rather than from the MLP fc2 layer.
+# =============================================================================
+
+inherits: "base.yaml"
+
+model:
+  # Short name; resolved to "vit_base_patch16_224" by src/utils/paths.py and
+  # src/models/builder.py.
+  name: "vit"
+
+  # Leaf Linear — activation shape from forward pass: [B, 197, 768]
+  # 197 = 1 CLS token + 196 patch tokens (14 × 14 patch grid)
+  layer: "blocks.11.attn.proj"
+
+  # layer_type: "linear" for ViT
+  # Determines how Stage 3 reduces the target layer's output to a scalar:
+  #   "linear" → output shape [1, seq_len, hidden_dim] = [1, 197, 768]
+  # The exact reduction depends on xai.ixg.vit_include_cls below:
+  #   vit_include_cls=false (default): scalar = activations[0, 1:, channel_id].sum()
+  #     Sums over the 196 PATCH tokens only, skipping CLS at index 0.
+  #     Cleaner spatial attribution — CLS is not a spatial location.
+  #   vit_include_cls=true: scalar = activations[0, :, channel_id].sum()
+  #     Sums over ALL 197 tokens (CLS + 196 patches).
+  #     Matches CoE's max_target="sum" but may blur IxG crops.
+  layer_type: "linear"
+
+xai:
+  method: "ixg"
+  target: "input"                # See rn152_ixg.yaml for full explanation
+
+  ixg:
+    abs_output: true             # |input × gradient| for visualization mask
+    sum_channels: true           # Sum over RGB → [H, W] 2D map for get_crop_bbox()
+
+    # ViT-specific: whether to include CLS token when reducing target-layer
+    # activations to a scalar for the backward pass. See layer_type comment
+    # above. Default false gives cleaner, paper-aligned spatial attribution.
+    # Ignored for rn152 (layer_type="conv").
+    vit_include_cls: false
+
+neuron:
+  channel_id: 652                 # Phase 1: one neuron
+                                 # Same as rn152 config for consistent comparison

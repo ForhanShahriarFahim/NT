@@ -1,0 +1,33 @@
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Local environments
+.venv/
+venv/
+env/
+.env
+
+# Local datasets and generated outputs
+dataset/
+results/
+neuron_viz_pipeline/results/
+
+# Large experiment artifacts
+*.pt
+*.pth
+*.safetensors
+*.npy
+*.npz
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# Editor / OS metadata
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

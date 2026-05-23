@@ -1,0 +1,53 @@
+# =============================================================================
+# FILE: neuron_viz_pipeline/configs/vit_ig.yaml
+#
+# Purpose:
+#   ViT-B/16 + Integrated Gradients (IG), Phase 1 comparison config.
+#
+#   Same attribution family as IxG (gradient-based), but with the path
+#   integral from a zero-image baseline so the attribution satisfies the
+#   Completeness axiom. Use this to cross-check whether IxG's attribution
+#   for ViT neuron 15 is stable/trustworthy.
+#
+# Scope:
+#   Same neuron, same layer, same vit_include_cls=false as vit_ixg.yaml.
+#   Designed to produce directly comparable collages.
+#
+# Run:
+#   cd NeuronTree-AI/Task-12/xai_neuron_viz
+#   python neuron_viz_pipeline/scripts/run_stage.py \
+#       --config neuron_viz_pipeline/configs/vit_ig.yaml --stage 3,4,collage
+#
+# Timing note:
+#   IG at n_steps=50 is ~50× slower than IxG per image. On ViT-B/16 each
+#   IxG image takes ~1-2s on a single GPU, so IG at n_steps=50 is
+#   ~50-100s per image. 150 images ≈ 2-4 hours. Smoke-test with
+#   --override xai.ig.n_steps=10 and --override rank.top_k=50 first.
+# =============================================================================
+
+inherits: "base.yaml"
+
+model:
+  name: "vit"
+  # Leaf attention projection module: model.blocks[11].attn.proj
+  layer: "blocks.11.attn.proj"
+  layer_type: "linear"
+
+xai:
+  method: "ig"
+  target: "input"
+
+  ig:
+    n_steps: 50              # Sundararajan et al. 2017 default
+    baseline: "zero"         # Canonical baseline
+
+    abs_output: true
+    sum_channels: true
+
+    # ViT-specific — same policy as IxG: skip CLS, sum over 196 patch tokens.
+    # Keeps IG directly comparable with IxG. See vit_ixg.yaml for the
+    # full explanation of this decision.
+    vit_include_cls: false
+
+neuron:
+  channel_id: 652                 # Matches rn152_ixg/vit_ixg configs

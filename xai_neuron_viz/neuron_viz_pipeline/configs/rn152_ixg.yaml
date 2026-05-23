@@ -1,0 +1,66 @@
+# =============================================================================
+# FILE: neuron_viz_pipeline/configs/rn152_ixg.yaml
+#
+# Purpose:
+#   ResNet-152 + IxG, Phase 1 config.
+#
+# Run with (once Step 7 is built):
+#   cd NeuronTree-AI/Task-12/xai_neuron_viz
+#   python neuron_viz_pipeline/scripts/run_stage.py \
+#       --config neuron_viz_pipeline/configs/rn152_ixg.yaml \
+#       --stage all
+#
+# Run individual stages:
+#   python neuron_viz_pipeline/scripts/run_stage.py \
+#       --config neuron_viz_pipeline/configs/rn152_ixg.yaml --stage 1
+# =============================================================================
+
+inherits: "base.yaml"
+
+model:
+  name: "rn152"
+  # Leaf conv layer — same target CoE uses for rn152 (verified against
+  # main.py NT LAB PATCH 3b: layer_names_prograess = {'layer4': 'layer4.2.conv3'})
+  # Activation shape from forward pass: [B, 2048, 7, 7]
+  layer: "layer4.2.conv3"
+
+  # layer_type: "conv" | "linear"
+  # Determines how Stage 3 reduces the target layer's output to a scalar
+  # for the backward pass. Specifically:
+  #   "conv"   → target output has shape [1, C, H, W]
+  #              scalar = sum(activations[0, channel_id, :, :])  over spatial dims
+  #   "linear" → target output has shape [1, seq_len, hidden_dim]
+  #              scalar = sum(activations[0, :, channel_id])     over sequence dim
+  # This matches the paper's formula: "aggregate these values into a single
+  # scalar representing the total contribution by summing over all spatial
+  # locations" (The Grammar of a Polysemantic Neuron, Equation 1 context, p.3).
+  layer_type: "conv"
+
+xai:
+  method: "ixg"
+
+  # Where gradients flow back to:
+  #   "input" = saliency w.r.t. input pixels → [H, W] spatial map for crops
+  #             Used in Phase 1 to produce the mask fed to get_crop_bbox()
+  #   "layer" = saliency w.r.t. an intermediate layer → footprint vector
+  #             Deferred to Phase 3 (polysemanticity clustering, paper-faithful)
+  target: "input"
+
+  # IxG-specific options (read by src/xai/gradient/ixg.py in Step 5)
+  ixg:
+    # abs_output: whether to take the absolute value of (input * gradient).
+    # For visualization masks we want "how much did this pixel attribute" —
+    # negative attributions indicate pixels the neuron pushes AWAY from,
+    # which aren't useful for a crop mask. Paper uses signed values for
+    # footprints (Eq. 1) but absolute values for visualization is standard.
+    abs_output: true
+
+    # sum_channels: combine RGB channels into a single scalar per pixel.
+    # Needed because get_crop_bbox() expects [H, W], not [C, H, W].
+    # Alternative: take max over channels (try this later if sum is too smooth).
+    sum_channels: true
+
+neuron:
+  channel_id: 652                 # Phase 1: one neuron
+                                 # Matches your existing CoE ccids_ly = [652]
+                                 # for direct comparison with pipeline_b outputs

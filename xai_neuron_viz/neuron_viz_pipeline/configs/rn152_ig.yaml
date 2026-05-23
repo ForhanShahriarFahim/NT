@@ -1,0 +1,61 @@
+# =============================================================================
+# FILE: neuron_viz_pipeline/configs/rn152_ig.yaml
+#
+# Purpose:
+#   ResNet-152 + Integrated Gradients (IG), Phase 1 comparison config.
+#
+#   IG attribution — averages ∂f/∂x over a straight-line path from a
+#   zero-image baseline to the real input, then multiplies by (input - baseline).
+#   Satisfies the Completeness and Sensitivity axioms from Sundararajan et al.
+#   2017, which vanilla IxG does not.
+#
+# Scope:
+#   Same neuron (channel 652) and same layer as rn152_ixg.yaml, so the output
+#   can be diffed side-by-side with the IxG run.
+#
+# Run:
+#   cd NeuronTree-AI/Task-12/xai_neuron_viz
+#   python neuron_viz_pipeline/scripts/run_stage.py \
+#       --config neuron_viz_pipeline/configs/rn152_ig.yaml --stage 3,4,collage
+#
+# Timing note:
+#   IG at n_steps=50 is roughly 50× slower than IxG per image. A full
+#   150-image run on rn152 takes ~20 minutes on a single GPU.
+#   For smoke tests, use --override xai.ig.n_steps=10 (≈10× speedup,
+#   visually similar maps at the cost of Riemann-approximation error).
+# =============================================================================
+
+inherits: "base.yaml"
+
+model:
+  name: "rn152"
+  layer: "layer4.2.conv3"
+  layer_type: "conv"
+
+xai:
+  method: "ig"
+  target: "input"
+
+  ig:
+    # Number of Riemann steps for the path integral.
+    # 50 is the Sundararajan et al. 2017 recommended default.
+    # Lower = faster but noisier; higher = slower with diminishing returns.
+    n_steps: 50
+
+    # Integration-path baseline. "zero" (all zeros in the pre-normalized
+    # tensor) is the canonical choice and what the paper uses.
+    # Options:
+    #   "zero"          — torch.zeros_like(input) — canonical
+    #   "uniform_noise" — torch.rand_like(input) — sanity-check alternative
+    baseline: "zero"
+
+    # Output post-processing (same meaning as IxG):
+    abs_output: true
+    sum_channels: true
+
+    # ViT-only option; ignored for conv models but kept for config
+    # uniformity so the same YAML shape works across methods.
+    vit_include_cls: false
+
+neuron:
+  channel_id: 652                 # Same as rn152_ixg.yaml for direct comparison

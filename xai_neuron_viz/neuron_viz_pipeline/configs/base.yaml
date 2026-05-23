@@ -1,0 +1,148 @@
+# =============================================================================
+# FILE: neuron_viz_pipeline/configs/base.yaml
+#
+# Purpose:
+#   Shared defaults for neuron_viz_pipeline. Every model-specific config
+#   (rn152_ixg.yaml, vit_ixg.yaml) uses `inherits: "base.yaml"` to pull
+#   these defaults. Child configs override any key defined here.
+#
+#   Deep-merge semantics: nested dicts merge recursively; scalars/lists
+#   replace wholesale. See neuron_viz_pipeline/src/utils/config.py for merge
+#   logic.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# WORKING DIRECTORY ASSUMPTION
+#
+# All scripts (run_stage.py, stage1_extract.py, python -m src.*) are run from
+# THE REPO ROOT:
+#     cd NeuronTree-AI/Task-12/xai_neuron_viz
+#     python neuron_viz_pipeline/scripts/run_stage.py \
+#         --stage all \
+#         --config neuron_viz_pipeline/configs/rn152_ixg.yaml
+#
+# This mirrors how your existing pipeline_a/run.py and pipeline_b/run.py
+# already work (they also assume cwd = repo root). Keeping this convention
+# means:
+#   - `./dataset` resolves to <repo_root>/dataset/
+#   - Same dataset path string works for CoE, pipeline_a, pipeline_b, and
+#     neuron_viz_pipeline — no special-casing needed.
+#
+# If you must run from elsewhere, override at runtime:
+#     --override data.path=/absolute/path/to/dataset
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Filesystem roots (relative to the repo root = cwd)
+# ---------------------------------------------------------------------------
+project_root: "./"
+results_root: "./neuron_viz_pipeline/results"  # Keeps new results isolated from
+                                           # output/ and results/ that pipeline_a
+                                           # and pipeline_b use
+
+# ---------------------------------------------------------------------------
+# Dataset — ImageNet validation set
+#
+# Location: <repo_root>/dataset/imagenet/val/<1000 class folders>/
+# This is the SAME location pipeline_a and pipeline_b already read from,
+# so sample index N refers to the exact same image across all pipelines.
+#
+# torchvision's ImageFolder reads:
+#   {data.path}/{dataset_name}/{dataset_split}/<class>/<image>
+# So the final ImageFolder root is:
+#   ./dataset/imagenet/val/
+#
+# This is built by MakeDataset in data/data_proces.py:
+#   root    = os.path.join(args.data_dir, dataset_split)
+#   where args.data_dir = os.path.join(data_path, dataset_name)
+# ---------------------------------------------------------------------------
+data:
+  path: "./dataset"              # Relative to repo root
+                                 # Contains /imagenet/val/... as subpath
+  dataset: "imagenet-val"        # Parsed as "<n>-<split>" by src/data/imagenet.py
+                                 # <n>=imagenet appended to data.path
+                                 # <split>=val becomes the ImageFolder root
+  image_size: 224                # Final crop size fed to the model
+  resize: 256                    # Resize shortest edge to this, then center-crop
+  normalize_mean: [0.485, 0.456, 0.406]
+  normalize_std:  [0.229, 0.224, 0.225]
+  num_workers: 4
+
+# ---------------------------------------------------------------------------
+# Stage 1 — Extract activations
+# Source: preprocessing/extract_activations.py (your three reference files)
+#         + RAM-safe streaming from your pipeline_a/extract.py
+# ---------------------------------------------------------------------------
+extract:
+  batch_size: 32                 # Batch size during forward passes
+  pool_type: "raw"               # raw | gap | gmp
+                                 #   raw → keep full spatial tensor (needed for IxG)
+                                 #   gap → global average pool (scalar per neuron)
+                                 #   gmp → global max pool   (scalar per neuron)
+  target_type: "output"          # output | input
+                                 # Which side of the layer the forward hook captures
+                                 # "output" = layer's output activations (default)
+                                 # "input"  = layer's input (rare; for LRP debugging)
+                                 # Appears in the saved filename:
+                                 #   activations_{layer}_{target_type}_{pool_type}.safetensors
+  save_intermediate: true        # Save checkpoints every `checkpoint_interval` batches
+                                 # Required for large datasets to avoid RAM OOM
+  checkpoint_interval: 50        # Save every N batches — keeps RAM <1.5 GB peak
+                                 # Safe for all models at batch_size=32
+  max_samples: null              # null = use all 50 000 val images
+                                 # Set to e.g. 200 for fast smoke tests
+
+# ---------------------------------------------------------------------------
+# Stage 2 — Rank top-k images per neuron
+# Source: preprocessing/compute_top_activations.py
+#         + your aggregate_chunked RAM-safe fix from pipeline_a/rank.py
+# ---------------------------------------------------------------------------
+rank:
+  top_k: 150                     # How many top images to keep per neuron
+  aggregation: "top_mean"        # max | mean | sum | top_mean
+                                 # top_mean = mean of top `top_percentile`%
+                                 #            spatial positions per sample
+  top_percentile: 10.0           # Used only when aggregation="top_mean"
+  save_values: true              # Save the activation scores alongside indices
+  chunk_size: 1000               # Samples per chunk during aggregate_chunked
+                                 # Peak RAM ≈ chunk_size × feature_size × 4 bytes
+                                 # 1000 × 2048 × 49 × 4 ≈ 400 MB for rn152
+
+# ---------------------------------------------------------------------------
+# Stage 3 — XAI saliency maps (NEW — not in the three reference files)
+# Method-specific options live under xai.<method>: in the child config.
+# ---------------------------------------------------------------------------
+xai_maps:
+  batch_size: 1                  # Backward pass retains graph → memory-heavy
+                                 # 1 is safe everywhere; raise only if you
+                                 # confirm headroom on your GPU
+  save_format: "safetensors"     # Only option currently supported
+
+# ---------------------------------------------------------------------------
+# Stage 4 — Crop + mask
+# Source: preprocessing/crop_activation_regions.py (verbatim bbox + mask logic)
+# All functions (get_crop_bbox, create_alpha_mask_crop, etc.) are copied
+# without modification. The only difference: the saliency map fed to them
+# is an XAI map (Stage 3 output) instead of a raw activation map.
+# ---------------------------------------------------------------------------
+crop:
+  method: "threshold"            # threshold | bbox | center
+                                 # threshold → bbox around pixels above percentile
+                                 # bbox      → weighted centroid → square crop
+                                 # center    → fixed center crop (ignores map)
+  threshold_percentile: 90.0     # For method=threshold: pixels at or above this
+                                 # percentile define the active region
+  padding: 20                    # Pixels added around bbox edges
+  alpha_mask: true               # Apply alpha mask within the cropped region
+  mask_threshold: 50.0           # Percentile for the alpha mask itself
+                                 # Higher = tighter mask
+  crop_size: 224                 # Output image size (both dimensions)
+  save_no_mask: true             # Also save the unmasked plain crop for comparison
+  save_overlay: false            # JET colormap overlay (optional diagnostic)
+
+# ---------------------------------------------------------------------------
+# Collage generation
+# ---------------------------------------------------------------------------
+collage:
+  images_per_grid: 15            # 3 rows × 5 cols per collage JPEG
+  total_images: 150              # 150 / 15 = 10 collage parts per neuron

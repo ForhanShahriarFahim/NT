@@ -1,0 +1,88 @@
+# =============================================================================
+# FILE: neuron_viz_pipeline/configs/vit_attention_rollout.yaml
+#
+# Purpose:
+#   ViT-B/16 + Attention Rollout, Phase 1 comparison config.
+#
+#   Attention Rollout (Abnar & Zuidema, ACL 2020): uses ViT's own attention
+#   weights — not gradients — to trace how information flows from input
+#   patches to the target-layer representation. Completely different family
+#   from IxG/IG.
+#
+#   Our default here uses WEIGHT_BY_NEURON=true so the rollout is
+#   neuron-specific (weighted by the target neuron's per-token activations),
+#   making it directly comparable to IxG/IG's neuron-specific attributions.
+#   Set weight_by_neuron=false below for vanilla CLS-row rollout if you
+#   want to reproduce the original Abnar & Zuidema output.
+#
+# IMPORTANT — ViT-only:
+#   Attention Rollout requires cfg.model.layer_type == 'linear'.
+#   Running it against rn152 will fail fast with a clear ValueError from
+#   AttentionRollout.validate_config(layer_type).
+#
+# Scope:
+#   Same neuron, same attention projection layer as vit_ixg.yaml.
+#
+# Run:
+#   cd NeuronTree-AI/Task-12/xai_neuron_viz
+#   python neuron_viz_pipeline/scripts/run_stage.py \
+#       --config neuron_viz_pipeline/configs/vit_attention_rollout.yaml \
+#       --stage 3,4,collage
+#
+# Timing note:
+#   Attention Rollout uses only forward passes (no backward) and is
+#   ~30× faster than IxG. A full 150-image run should complete in
+#   under a minute on ViT.
+# =============================================================================
+
+inherits: "base.yaml"
+
+model:
+  name: "vit"
+  # Leaf attention projection module: model.blocks[11].attn.proj
+  layer: "blocks.11.attn.proj"
+  layer_type: "linear"          # AttentionRollout REQUIRES this — it's ViT-only
+
+xai:
+  method: "attention_rollout"
+
+  # target: "input" in base.yaml; Attention Rollout doesn't actually use
+  # gradient-target semantics but keeping the field preserves schema
+  # uniformity across methods.
+  target: "input"
+
+  attention_rollout:
+    # Add I (identity) to each layer's attention before matrix-multiplication
+    # to model the residual connection (x_{k+1} = x_k + Attn(x_k)).
+    # Recommended TRUE — matches the paper's original formulation.
+    # Set false only for ablation studies.
+    include_identity: true
+
+    # How to collapse the per-head attention matrices into one [N, N]
+    # matrix per layer. "mean" is the paper's default. "max" picks the
+    # strongest head per position — sometimes gives tighter maps.
+    head_agg: "mean"           # "mean" | "max"
+
+    # NEURON-WEIGHTED vs VANILLA rollout:
+    #
+    #   true  (default):  Weight the rollout rows by the target neuron's
+    #                     per-token activations at cfg.model.layer.
+    #                     Result is NEURON-SPECIFIC and directly comparable
+    #                     to IxG/IG output. This is what we want for the
+    #                     polysemantic-neuron analysis.
+    #
+    #   false: Vanilla CLS-row rollout (Abnar & Zuidema 2020 default).
+    #          Result is IMAGE-SPECIFIC but NOT neuron-specific — the same
+    #          heatmap would appear for every neuron of the same image.
+    #          Still useful as a global ViT attention baseline.
+    weight_by_neuron: true
+
+    # Optional denoising: zero out this fraction of the lowest attention
+    # weights per layer before composition, then renormalize rows.
+    # 0.0 = disabled (paper's original formulation). Common ViT-rollout
+    # variants use 0.9 (keep only top 10% per row) but that's aggressive
+    # and can over-sharpen the maps. Leave at 0.0 for Phase 1.
+    discard_ratio: 0.0
+
+neuron:
+  channel_id: 652                 # Same as other configs for cross-method comparison
