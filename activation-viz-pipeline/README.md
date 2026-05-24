@@ -17,6 +17,11 @@ attention rollout.
 - Run the whole workflow from CLI without editing source files.
 - Select ViT layer target and channel number from CLI.
 
+## Command Runbook
+
+For copy-ready setup commands, smoke tests, full pipeline runs, layer variants,
+channel changes, and direct script commands, see [COMMANDS.md](COMMANDS.md).
+
 ## Supported Models
 
 | CLI name | Model |
