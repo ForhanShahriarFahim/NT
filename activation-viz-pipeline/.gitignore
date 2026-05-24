@@ -1,0 +1,38 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local datasets and generated outputs
+dataset/
+results/
+output/
+coe_eval_results/
+
+# Large model and tensor artifacts
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.tmp.npy
+
+# Generated image artifacts
+collages/
